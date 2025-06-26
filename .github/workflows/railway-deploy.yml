@@ -1,0 +1,62 @@
+name: Deploy to Railway
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: |
+          curl -fsSL https://railway.app/install.sh | sh
+          echo "$HOME/.railway/bin" >> $GITHUB_PATH
+
+      - name: Deploy to Railway (Production)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          railway login --browserless
+          railway link --project ${{ secrets.RAILWAY_PROJECT_ID }} --environment production
+          railway up --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Deploy to Railway (Staging)
+        if: github.ref == 'refs/heads/develop'
+        run: |
+          railway login --browserless
+          railway link --project ${{ secrets.RAILWAY_PROJECT_ID }} --environment staging
+          railway up --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Deploy PR Environment
+        if: github.event_name == 'pull_request'
+        run: |
+          railway login --browserless
+          railway link --project ${{ secrets.RAILWAY_PROJECT_ID }}
+          # Criar ambiente temporário para PR
+          railway environment new pr-${{ github.event.number }} --duplicate staging
+          railway environment pr-${{ github.event.number }}
+          railway up --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Comment PR with deployment URL
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '🚀 PR Environment deployed! Check the Railway dashboard for the URL.'
+            })
